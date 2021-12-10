@@ -9,10 +9,6 @@ import itertools
 
 from collections import Counter
 
-
-
-
-
 def minimalDistribution(nodes,colorCount):
     # calculate color distribution by column
     dists = nodes.groupby("colidx").apply(lambda x:Counter(x["cidx"]))
@@ -30,7 +26,7 @@ def minimalDistribution(nodes,colorCount):
 
 
 
-def colorIndexor(acol):
+def colorIndexor_inapply(acol):
     """
     make a color indexor
 
@@ -46,9 +42,23 @@ def colorIndexor(acol):
     colindexor = colindexor.rename(columns={"index":"ucidx"})[["ucidx","colidx","cidx"]]
     return colindexor
 
+def colorUIndex(nodes):
+    colorIndex= nodes.groupby("colidx").apply(colorIndexor_inapply).reset_index(drop=True)
+    return colorIndex
+
+def re_index(nodes,colorIndex):
+    """
+    add new column with universal color index of each color
+    :param nodes:
+    :param colorIndex:
+    :return:
+    """
+    return nodes.join(colorIndex.set_index(["colidx", "cidx"]), on=["colidx", "cidx"], rsuffix="lol")
+
+
 def getColorConstraints(nodesUindexed):
     colorConstraints = nodesUindexed.groupby(["colidx"]).apply(lambda x: pd.DataFrame([ [tuple(x.sort_values("rowidx")["ucidx"].values),
-                                                                                         Counter(x["cidx"]),
+    return colorConstraints                                                                              Counter(x["cidx"]),
                                                                                          Counter(x["ucidx"])]],
                                                                                       index = [x["colidx"].values[0]],
 
