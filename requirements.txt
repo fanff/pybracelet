@@ -1,7 +1,0 @@
-pandas
-numpy
-Pillow
-scipy
-matplotlib
-
-pysimplegui

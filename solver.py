@@ -58,7 +58,7 @@ def re_index(nodes,colorIndex):
 
 def getColorConstraints(nodesUindexed):
     colorConstraints = nodesUindexed.groupby(["colidx"]).apply(lambda x: pd.DataFrame([ [tuple(x.sort_values("rowidx")["ucidx"].values),
-    return colorConstraints                                                                              Counter(x["cidx"]),
+                                                                             Counter(x["cidx"]),
                                                                                          Counter(x["ucidx"])]],
                                                                                       index = [x["colidx"].values[0]],
 
