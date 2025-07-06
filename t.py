@@ -3,8 +3,8 @@ import FreeSimpleGUI as sg
 from PIL import  Image
 import io
 import pandas as pd
-from BData import BData, rowColToPixRect
-from color_map import COLOR_MAP
+from pybracelet.BData import BData, rowColToPixRect
+from pybracelet.color_map import COLOR_MAP
 import json
 
 def popup_color_chooser(look_and_feel=None):
@@ -104,6 +104,12 @@ def update_assortment(bdata:BData, window:sg.Window):
     text_color="Red" if not validatedassortment else "Black"
     textsg.update(f"{assortment}",text_color=text_color)
 
+
+def update_colorRegistry(colorRegistry, window:sg.Window):
+    for i, color in colorRegistry.items():
+        window[f"-CCHOICE{i}-"].update(data=simpleSquare(color, pix=20))
+        window[f'Color Picker{i}'].update(button_color=color)
+
 def main(args):
     if args.bracelet:
         with open(args.bracelet, "r") as fin:
@@ -122,14 +128,21 @@ def main(args):
                 key=f'Color Picker{i}',button_color=color)]
         colorPickers+= l
 
-
-    layout = [  [sg.Input(key="-LOADNAME-"), sg.FileBrowse(),sg.B("load",key="-LOADFILE-")],
+    NewSpinner = [sg.Input(50, size=(3, 1), font='Any 12', justification='r', key='-SPIN-'),
+             sg.Column([[sg.Button('▲', size=(1, 1), font='Any 7', border_width=0, button_color=(sg.theme_text_color(), sg.theme_background_color()), key='-COLCOUNTUP-')],
+            [sg.Button('▼', size=(1, 1), font='Any 7', border_width=0, button_color=(sg.theme_text_color(), sg.theme_background_color()), key='-COLCOUNTDOWN-')]])]
+    
+    
+    layout = [  [sg.Input(default_text="current.json", key="-LOADNAME-"), sg.FileBrowse(),sg.B("load",key="-LOADFILE-")],
             
             [sg.Text("wire Count"),
                 sg.Spin([6,8,10,12,14,16,18,20,22,24,26,28],
                                             initial_value = bdata.wireCount,
                                             key="-WCOUNT-",
-                                            enable_events=True), sg.B(f'Background Color')],
+                                            enable_events=True), sg.B(f'Background Color'),
+                                            
+            ],
+                NewSpinner+[sg.Button("Set col count",key="-SETCOLCOUNT-")],
                 [colorPickers],
 
                 [sg.Column([[sg.Graph(bdata.canvas_size(), (0, 0), bdata.canvas_size(), key='-GRAPH-',
@@ -141,6 +154,13 @@ def main(args):
     
     window = sg.Window('Bracelet Editor', layout,resizable=True)
     window.finalize()
+
+    if args.bracelet:
+        update_assortment(bdata, window)
+
+        update_colorRegistry(bdata.colorRegistry, window)
+        window["-WCOUNT-"].update(bdata.wireCount)
+
     redrawGraph(bdata, window)
 
     while True:
@@ -170,6 +190,32 @@ def main(args):
             redrawGraph(bdata,window,deep=True)
             update_assortment(bdata, window)
 
+        elif event == "-COLCOUNTUP-":
+            prev_value = values["-SPIN-"]
+            try:
+                bdata.new_col_count(int(prev_value)+1)
+                redrawGraph(bdata,window,deep=True)
+                window["-SPIN-"].update(int(prev_value)+1)
+            except ValueError as e:
+                sg.popup_error(f"Invalid column count: {newValue}\n{e}")
+            update_assortment(bdata, window)
+        elif event == "-COLCOUNTDOWN-":
+            prev_value = values["-SPIN-"]
+            try:
+                bdata.new_col_count(int(prev_value)-1)
+                redrawGraph(bdata,window,deep=True)
+                window["-SPIN-"].update(int(prev_value)-1)
+            except ValueError as e:
+                sg.popup_error(f"Invalid column count: {newValue}\n{e}")
+            update_assortment(bdata, window)
+        elif event == "-SETCOLCOUNT-":
+            newValue = values["-SPIN-"]
+            try:
+                bdata.new_col_count(int(newValue))
+                redrawGraph(bdata,window,deep=True)
+            except ValueError as e:
+                sg.popup_error(f"Invalid column count: {newValue}\n{e}")
+            update_assortment(bdata, window)
         elif event == "-GRAPH-":
             clickCoord = values[event]
 
@@ -217,7 +263,10 @@ def main(args):
                         redrawGraph(bdata, window, deep=True)
                         update_assortment(bdata, window)
 
+                        update_colorRegistry(bdata.colorRegistry, window)
                         window["-WCOUNT-"].update(bdata.wireCount)
+
+                        window["-SPIN-"].update(bdata.colCount)
 
         else:
             print(f'The current look and feel = {sg.CURRENT_LOOK_AND_FEEL}')
