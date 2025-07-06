@@ -1,7 +1,8 @@
+from typing import Dict
 import pandas as pd
 import json
 
-
+import collections
 
 
 def rowColToPixRect(colidx, rowidx,masterScale):
@@ -49,14 +50,17 @@ class BData():
         self.nodes[(colidx, rowidx)] = currentColorIdx
 
     def _initNodes(self):
+
+        knownnodes = self.nodes
+        self.nodes = dict()
         centers = []
         for colidx in range(self.colCount):
-            maxrowShit = 0 if colidx%2 == 0 else -1
+            maxrowShit = 0 if colidx%2 == 0 else -1 # odd columns are shifted down by one row
             for rowidx in range(self.wireCount//2 + maxrowShit):
 
                 idx = (colidx,rowidx)
-                if idx in self.nodes:
-                    continue
+                if idx in knownnodes:
+                    self.nodes[idx] = knownnodes[idx]
                 else:
                     self.nodes[idx] = 0
 
@@ -93,3 +97,55 @@ class BData():
         # Reinitialize centers based on the new nodes
         bdata._initNodes()
         return bdata
+
+
+    def get_column(self,column_index):
+        """
+        Returns a list of color indices for the specified column.
+        """
+        column = []
+        for (col_idx,row_idx),color_idx in self.nodes.items():
+            if col_idx == column_index:
+                column.append((col_idx,row_idx,color_idx))
+        # sort column by row index
+        column.sort(key=lambda x: x[1])
+        return column
+    
+    
+    def wire_assortment(self) -> Dict[int, int]:
+        """
+        Returns a dictionary with the count of each color used in the nodes.
+        """
+
+        assortment = {}
+        # for every columns get the colors:
+        for col_idx in range(self.colCount):
+            column = self.get_column(col_idx)
+            colors = [color_idx for _, _, color_idx in column]
+
+            # Count occurrences of each color (group and count using python collections)
+            color_count = collections.Counter(colors)
+
+            # Add to the assortment dictionary if the color is not already present or if the count is higher then insert the new count
+            for color_idx, count in color_count.items():
+                if color_idx in assortment :
+                    if assortment[color_idx] < count:
+                        assortment[color_idx] = count
+                else:
+                    assortment[color_idx] = count
+
+        return assortment
+
+
+    def  validate_assortment(self,assortment: Dict[int,int]) -> bool:
+        """
+        Validates the assortment of colors against the maximum wire count.
+        Returns True if valid, False otherwise.
+        """
+        # sum up all the counts in the assortment
+        total_count = sum(assortment.values())
+        # Check if the total count exceeds the maximum wire count
+        return total_count <= self.wireCount
+
+            
+        

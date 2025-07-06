@@ -77,7 +77,7 @@ def findNode(bdata,xclic,yclic):
 
 
 def redrawGraph(bdata,window,deep=True):
-    gelem = window["-GRAPH-"]
+    gelem:sg.Graph = window["-GRAPH-"]
     if deep:
         canvas_size = bdata.canvas_size()
         gelem.set_size(canvas_size)
@@ -90,11 +90,19 @@ def redrawGraph(bdata,window,deep=True):
             redrawNodeAt(gelem,colidx,rowidx,color,bdata.masterScale)
         else:
             raise ValueError(f"Color index {coloridx} not found in color registry.")
+        
+
 def redrawNodeAt(gelem,colidx,rowidx,color,masterScale):
     f, t = rowColToPixRect(colidx, rowidx,masterScale=masterScale)
     gelem.draw_oval(f, t, fill_color=color)
 
+def update_assortment(bdata:BData, window:sg.Window):
 
+    assortment = bdata.wire_assortment()
+    validatedassortment = bdata.validate_assortment( assortment)
+    textsg:sg.Text = window["-ASSORTMENT-"]
+    text_color="Red" if not validatedassortment else "Black"
+    textsg.update(f"{assortment}",text_color=text_color)
 
 def main(args):
     if args.bracelet:
@@ -126,6 +134,9 @@ def main(args):
 
                 [sg.Column([[sg.Graph(bdata.canvas_size(), (0, 0), bdata.canvas_size(), key='-GRAPH-',
                         change_submits=True, drag_submits=False,enable_events=True)]],scrollable=True,expand_y=True)],
+
+
+                        [sg.Text("Assortment info:"),sg.Text("",key="-ASSORTMENT-")],
             [sg.B("Save",key="-SAVEBUTTON-"), sg.In("current.json",key="-SAVENAME-")]]
     
     window = sg.Window('Bracelet Editor', layout,resizable=True)
@@ -156,8 +167,8 @@ def main(args):
 
             newValue = values[event]
             bdata.newWireCount(newValue)
-            redrawGraph(bdata,window)
-
+            redrawGraph(bdata,window,deep=True)
+            update_assortment(bdata, window)
 
         elif event == "-GRAPH-":
             clickCoord = values[event]
@@ -171,7 +182,10 @@ def main(args):
             print(f'click {colidx, rowidx} ')
 
             redrawNodeAt(window["-GRAPH-"], colidx, rowidx, color,bdata.masterScale)
-            #redrawGraph(bdata,window)
+            
+            update_assortment(bdata, window)
+
+
         elif event == 'Background Color':
             gelem = window[event]
             window.hide()
@@ -192,14 +206,18 @@ def main(args):
                     fou.write(s)
         elif event == "-LOADFILE-":
             filename = values['-LOADNAME-']
+
+            window[f'-CCHOICE{i}-']
             if filename.endswith(".json"):
                 # if file exists, load it
                 if os.path.exists(filename):
                     with open(filename, "r") as fin:
                         bdata = BData.fromJsonstr(fin.read())
 
-                        redrawGraph(bdata, window, deep=False)
-           
+                        redrawGraph(bdata, window, deep=True)
+                        update_assortment(bdata, window)
+
+                        window["-WCOUNT-"].update(bdata.wireCount)
 
         else:
             print(f'The current look and feel = {sg.CURRENT_LOOK_AND_FEEL}')
