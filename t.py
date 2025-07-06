@@ -1,8 +1,11 @@
+import os
 import FreeSimpleGUI as sg
 from PIL import  Image
 import io
 import pandas as pd
+from BData import BData, rowColToPixRect
 from color_map import COLOR_MAP
+import json
 
 def popup_color_chooser(look_and_feel=None):
     """
@@ -60,58 +63,6 @@ def simpleSquare(color,pix=10):
     return b.getvalue()
 
 
-
-class BData():
-
-    def __init__(self,wireCount,masterScale):
-
-        self.masterScale = masterScale
-        self.wireCount = wireCount
-        self.colCount = 50
-        self.backGroundColor = '#000000'
-        self.nodes=dict()
-        self.maxColorCount = 12
-
-        self.colorRegistry = {i:"#FFFFFF" for i in range(self.maxColorCount)}
-        self.colorRegistry[1] = "#FF0000"
-        self.colorRegistry[2] = "#00FF00"
-        self.colorRegistry[3] = "#0000FF"
-        self._initNodes()
-
-
-    def newWireCount(self,wireCount):
-        self.wireCount = wireCount
-        self._initNodes()
-
-
-    def canvas_size(self):
-        return ((self.colCount//2+2)*self.masterScale,self.masterScale*self.wireCount//2)
-
-    def setNodeColor(self,colidx, rowidx, currentColorIdx):
-        self.nodes[(colidx, rowidx)] = currentColorIdx
-
-    def _initNodes(self):
-        self.nodes =dict()
-        centers = []
-        for colidx in range(self.colCount):
-            maxrowShit = 0 if colidx%2 == 0 else -1
-            for rowidx in range(self.wireCount//2 + maxrowShit):
-                self.nodes[(colidx,rowidx)]= 0
-
-                f, t = rowColToPixRect(colidx, rowidx,self.masterScale)
-                xcenter = (f[0] + t[0])//2
-                ycenter = (f[1] + t[1])//2
-
-                centers.append([colidx, rowidx,xcenter,ycenter])
-
-        self.centers = pd.DataFrame(centers,columns=["colidx", "rowidx","xcenter","ycenter"])
-    def toJson(self):
-        import json
-
-        nodes = [[k1,k2,v] for (k1,k2),v in self.nodes.items()]
-        return json.dumps((self.colorRegistry,nodes))
-
-
 def findNode(bdata,xclic,yclic):
     df = bdata.centers
 
@@ -121,18 +72,7 @@ def findNode(bdata,xclic,yclic):
 
     colidx,rowidx = node.colidx, node.rowidx
     return colidx,rowidx
-def rowColToPixRect(colidx, rowidx,masterScale):
-    xpad = int(0.95*masterScale)
-    ypad = int(0.9*masterScale)
 
-
-    if colidx % 2 == 0:
-        sx, sy = ((colidx//2)*masterScale,rowidx*masterScale)
-        return (sx+xpad,sy+ypad) , (sx+masterScale-xpad,sy+masterScale-ypad)
-    else:
-
-        sx, sy = (((colidx // 2) * masterScale)+masterScale//2, rowidx * masterScale +masterScale//2)
-        return (sx+xpad,sy+ypad) , (sx+masterScale-xpad,sy+masterScale-ypad)
 
 
 
@@ -148,37 +88,45 @@ def redrawGraph(bdata,window,deep=True):
         if coloridx in bdata.colorRegistry:
             color = bdata.colorRegistry[coloridx]
             redrawNodeAt(gelem,colidx,rowidx,color,bdata.masterScale)
-
+        else:
+            raise ValueError(f"Color index {coloridx} not found in color registry.")
 def redrawNodeAt(gelem,colidx,rowidx,color,masterScale):
     f, t = rowColToPixRect(colidx, rowidx,masterScale=masterScale)
     gelem.draw_oval(f, t, fill_color=color)
 
 
-if __name__ == '__main__':
+
+def main(args):
+    if args.bracelet:
+        with open(args.bracelet, "r") as fin:
+            bdata = BData.fromJsonstr(fin.read())
+    else:
+        # Default bracelet data
+        bdata = BData(wireCount=8,masterScale = 64)
+
+
     currentColorIdx = 1
-    bdata = BData(wireCount=8,masterScale = 64)
-
-
-
     colorPickers = []
     for i,color in bdata.colorRegistry.items():
         l = [sg.Image(key=f"-CCHOICE{i}-",enable_events=True,
-                      data=simpleSquare(color,pix=20)),
-             sg.Button(f"{i}",
-                 key=f'Color Picker{i}',button_color=color)]
+                    data=simpleSquare(color,pix=20)),
+            sg.Button(f"{i}",
+                key=f'Color Picker{i}',button_color=color)]
         colorPickers+= l
 
 
-    layout = [ [sg.Text("wire Count"),
+    layout = [  [sg.Input(key="-LOADNAME-"), sg.FileBrowse(),sg.B("load",key="-LOADFILE-")],
+            
+            [sg.Text("wire Count"),
                 sg.Spin([6,8,10,12,14,16,18,20,22,24,26,28],
-                                              initial_value = bdata.wireCount,
-                                              key="-WCOUNT-",
-                                              enable_events=True), sg.B(f'Background Color')],
+                                            initial_value = bdata.wireCount,
+                                            key="-WCOUNT-",
+                                            enable_events=True), sg.B(f'Background Color')],
                 [colorPickers],
 
                 [sg.Column([[sg.Graph(bdata.canvas_size(), (0, 0), bdata.canvas_size(), key='-GRAPH-',
-                         change_submits=True, drag_submits=False,enable_events=True)]],scrollable=True)],
-              [sg.B("Save",key="-SAVEBUTTON-"), sg.In("current",key="-SAVENAME-")]]
+                        change_submits=True, drag_submits=False,enable_events=True)]],scrollable=True,expand_y=True)],
+            [sg.B("Save",key="-SAVEBUTTON-"), sg.In("current.json",key="-SAVENAME-")]]
     
     window = sg.Window('Bracelet Editor', layout,resizable=True)
     window.finalize()
@@ -216,8 +164,6 @@ if __name__ == '__main__':
 
             x, y = clickCoord
 
-            currentColorIdx
-
             colidx,rowidx = findNode(bdata, x, y)
 
             bdata.setNodeColor(colidx,rowidx,currentColorIdx)
@@ -241,9 +187,30 @@ if __name__ == '__main__':
             bnamesan = bname.replace(" ","")
 
             if len(bnamesan)>0:
-                s = bdata.toJson()
-                with open(f"./{bnamesan}.json","w") as fou:
+                s = bdata.toJson(indent=4)
+                with open(bnamesan,"w") as fou:
                     fou.write(s)
+        elif event == "-LOADFILE-":
+            filename = values['-LOADNAME-']
+            if filename.endswith(".json"):
+                # if file exists, load it
+                if os.path.exists(filename):
+                    with open(filename, "r") as fin:
+                        bdata = BData.fromJsonstr(fin.read())
+
+                        redrawGraph(bdata, window, deep=False)
+           
 
         else:
             print(f'The current look and feel = {sg.CURRENT_LOOK_AND_FEEL}')
+
+
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(description='Bracelet Editor')
+    parser.add_argument('bracelet', type=str, nargs='?', default=None,
+                        help='Bracelet JSON file to load')
+    
+    args = parser.parse_args()
+    main(args)
