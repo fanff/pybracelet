@@ -1,11 +1,62 @@
 import enum
-from typing import Dict, List, Optional, Union
+import itertools
+from typing import Dict, Generator, List, Optional, Tuple, Union
 import pandas as pd
 import json
 
 import collections
 
 
+class Assortment(Dict[int,int]):
+    """
+    A dictionary subclass for color assortments in a bracelet.
+    
+    This class extends the built-in dict to represent a color assortment,
+    where keys are color indices and values are their respective counts.
+    It provides a method to validate the assortment against a maximum wire count.
+    """
+    def validate(self, max_wire_count: int) -> bool:
+        """
+        Validates the assortment against the maximum wire count.
+        
+        :param max_wire_count: Maximum number of wires in the bracelet
+        :return: True if the assortment is valid, False otherwise
+        """
+        total_count = sum(self.values())
+        return total_count <= max_wire_count
+    
+    def generate_valid_inputs(self, max_wire_count: int) -> Generator[List[int], None, None]:
+        """
+        Generates all valid combinations of color indices based on the assortment's minimum counts.
+        Each combination is exactly `max_wire_count` in length, filling with additional wires if needed.
+
+        :param max_wire_count: Maximum number of wires in the bracelet
+        :raises ValueError: If the assortment exceeds the maximum wire count
+        :return: Generator of lists, each representing a valid assortment of color indices
+        """
+        total_minimum_count = sum(self.values())
+        if total_minimum_count > max_wire_count:
+            raise ValueError("Assortment exceeds maximum wire count")
+
+        remaining_slots = max_wire_count - total_minimum_count
+
+        # Initial fixed set based on minimum counts
+        fixed_colors = []
+        for color_index, min_count in self.items():
+            fixed_colors.extend([color_index] * min_count)
+
+        color_indices = list(self.keys())
+
+        # Generate all possible combinations for remaining slots
+        for extra_combination in itertools.combinations_with_replacement(color_indices, remaining_slots):
+            # Combine fixed colors and extra colors
+            full_combination = fixed_colors + list(extra_combination)
+
+            # Generate unique permutations
+            for permutation in set(itertools.permutations(full_combination)):
+                yield list(permutation)
+       
+   
 def rowColToPixRect(colidx, rowidx,masterScale):
     xpad = int(0.95*masterScale)
     ypad = int(0.9*masterScale)
@@ -21,9 +72,18 @@ def rowColToPixRect(colidx, rowidx,masterScale):
 
 
 class BData():
+    """Data class for representing a bracelet's wire configuration.
+    
+    This class holds the wire count, column count, color registry, and nodes.
+    It provides methods to initialize nodes, set node colors, and convert to JSON.
+    """
 
     def __init__(self,wireCount,colCount=50,masterScale=64):
-
+        """
+        :param wireCount: Number of wires in the bracelet
+        :param colCount: Number of columns in the bracelet
+        :param masterScale: Scale factor for the bracelet
+        """
         self.masterScale = masterScale
         
         self.wireCount = wireCount
@@ -115,12 +175,12 @@ class BData():
         return column
     
     
-    def wire_assortment(self) -> Dict[int, int]:
+    def wire_assortment(self) -> 'Assortment':
         """
         Returns a dictionary with the count of each color used in the nodes.
         """
 
-        assortment = {}
+        assortment = Assortment()
         # for every columns get the colors:
         for col_idx in range(self.colCount):
             column = self.get_column(col_idx)
@@ -140,7 +200,7 @@ class BData():
         return assortment
 
 
-    def  validate_assortment(self,assortment: Dict[int,int]) -> bool:
+    def validate_assortment(self,assortment: Dict[int,int]) -> bool:
         """
         Validates the assortment of colors against the maximum wire count.
         Returns True if valid, False otherwise.
@@ -149,16 +209,16 @@ class BData():
         total_count = sum(assortment.values())
         # Check if the total count exceeds the maximum wire count
         return total_count <= self.wireCount
-
+    
 class NodeType(enum.Enum):
     """
     Enumeration for the types of nodes in a bracelet.
     Each type corresponds to a specific configuration of left and right input wires.
     """
-    LL = 1
-    RR = 2
-    LR = 3
-    RL = 4
+    LL = 0 # 00 : Flip, right
+    RR = 1 # 01 : Flip, left
+    LR = 2 # 10 : NoFlip, right
+    RL = 3 # 11 : NoFlip, left
 
     def compute_output(self, left_color: int, right_color: int):
         """
@@ -217,9 +277,6 @@ class BChunk():
         return len(self.colors) == self.wire_count // 2
     
     
-    
-    
-    
     def input_wire_indice_for_node(self,node_index):
         """
         Returns the input wire indices for the given node index.
@@ -265,5 +322,59 @@ class BChunk():
         if not self.is_even_column():
             self.output_wire_colors[0] = self.input_wire_colors[0]
             self.output_wire_colors[-1] = self.input_wire_colors[-1]
+    def check_and_compute_output(self):
+        """
+        Computes the output wire colors based on the input wire colors and node types,
+        but only if the node color matches the expected color.
+        Returns True if the output was computed successfully, False otherwise.
+        """
+        for i, node_type in enumerate(self.node_types):
+            if node_type is None:
+                continue
+            left_index, right_index = self.input_wire_indice_for_node(i)
+            left_color = self.input_wire_colors[left_index]
+            right_color = self.input_wire_colors[right_index]
+            node_color, output_wires = node_type.compute_output(left_color, right_color)
+            if self.colors[i] == node_color:
+                # if the node color is already set, we can skip this node
+                self.output_wire_colors[left_index] = output_wires[0]   
+                self.output_wire_colors[right_index] = output_wires[1]
+            else:
+                return False
+        if not self.is_even_column():
+            self.output_wire_colors[0] = self.input_wire_colors[0]
+            self.output_wire_colors[-1] = self.input_wire_colors[-1]
+        return True
+    
+
+    def enumerate_possible_nodetypes(self,only_count=False) -> Union[int, itertools.product]:
+        if only_count:
+            return 4**len(self.colors)
+        return itertools.product([NodeType.LL,
+                                  NodeType.RR,
+                                    NodeType.LR,
+                                    NodeType.RL
+                                  ], repeat=len(self.colors))
+    
+    def enumerate_possible_input_wire_colors(self, assortment:Assortment) -> Generator[Tuple[List[int], List[NodeType]], None, None]:
+        """
+        Enumerates all possible input wire color combinations based on the given assortment.
+        :param assortment: An Assortment object containing color indices and their counts
+        :return: A generator yielding lists of input wire colors
+        """ 
             
+        # Generate all valid input combinations based on the assortment
+        for valid_input in assortment.generate_valid_inputs(max_wire_count=self.wire_count):
+            # try to find a valid solution for the current input
+            # validate current input
+
+            all_nodes_types = self.enumerate_possible_nodetypes(only_count=False)
+            for nt in all_nodes_types:
+                self.set_node_types(nt)
+                self.set_input_wire_colors(valid_input)
+                if self.check_and_compute_output():
+
+                    yield valid_input,self.node_types
         
+    
+    
