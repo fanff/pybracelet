@@ -1,0 +1,7 @@
+# standard git ignore file for Python projects
+*.pyc
+*.pyo
+__pycache__/
+*.pyd
+*.egg
+*.egg-info/
